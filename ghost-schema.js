@@ -1,5 +1,5 @@
 /**
- * Custom schema with types based on the Ghost V4 API spec.
+ * Custom schema with types based on the Ghost Content API spec.
  *
  * Note that GhostPost and GhostPage are identical.
  *

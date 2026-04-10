@@ -1,11 +1,11 @@
 /****
  * gatsby-node.js
  *
- * Generate Gatsby nodes based on a custom schema derived from the Ghost V3 API spec.
+ * Generate Gatsby nodes based on a custom schema derived from the Ghost V6 API spec.
  *
  * This source plugin will source and generate Posts, Pages, Tags, Authors and Settings.
  *
- * https://ghost.org/docs/api/v3/
+ * https://ghost.org/docs/content-api/
  */
 
 const ContentAPI = require('./content-api');
@@ -24,6 +24,42 @@ const cheerio = require(`cheerio`);
  * Import all custom ghost types.
  */
 const ghostTypes = require('./ghost-schema');
+
+/**
+ * Fetches all pages of a Ghost Content API resource.
+ *
+ * Ghost v6 enforces a maximum limit of 100 per request and silently caps
+ * `limit=all` to 100. This helper transparently paginates through all pages
+ * to retrieve the full data set.
+ *
+ * If the caller has already provided an explicit numeric limit in `options`
+ * (meaning they intentionally want a fixed number of results), a single
+ * request is made instead.
+ */
+const PAGE_LIMIT = 100;
+
+const browseAll = (resource, options = {}) => {
+    const {limit, ...restOptions} = options;
+
+    // Respect an explicit numeric limit — the caller wants a fixed page of results.
+    if (limit && limit !== 'all') {
+        return resource.browse(options);
+    }
+
+    const fetchPage = page => resource.browse(Object.assign({}, restOptions, {limit: PAGE_LIMIT, page}));
+
+    return fetchPage(1).then((firstPage) => {
+        const {pages = 1} = (firstPage.meta && firstPage.meta.pagination) || {};
+
+        if (pages <= 1) {
+            return firstPage;
+        }
+
+        const remaining = Array.from({length: pages - 1}, (unused, i) => i + 2);
+        return Promise.all(remaining.map(fetchPage))
+            .then(morePages => [].concat(firstPage, ...morePages));
+    });
+};
 
 let fetchTiers = null;
 
@@ -102,7 +138,7 @@ const transformCodeinjection = (posts) => {
  */
 exports.sourceNodes = ({actions}, configOptions) => {
     const {createNode} = actions;
-    let {apiUrl, contentApiKey, version = `v5.0`, postAndPageFetchCustomOptions = {}} = configOptions;
+    let {apiUrl, contentApiKey, version = `v6.0`, postAndPageFetchCustomOptions = {}} = configOptions;
 
     if (version.match(/^v\d$/)) {
         version = version.replace(/^(v\d)$/, '$1.0');
@@ -123,15 +159,13 @@ exports.sourceNodes = ({actions}, configOptions) => {
         ...postAndPageFetchCustomOptions
     };
 
-    const fetchPosts = api.posts
-        .browse(postAndPageFetchOptions)
+    const fetchPosts = browseAll(api.posts, postAndPageFetchOptions)
         .then((posts) => {
             posts = transformCodeinjection(posts);
             posts.forEach(post => createNode(PostNode(post)));
         }).catch(ignoreNotFoundElseRethrow);
 
-    const fetchPages = api.pages
-        .browse(postAndPageFetchOptions)
+    const fetchPages = browseAll(api.pages, postAndPageFetchOptions)
         .then((pages) => {
             pages.forEach(page => createNode(PageNode(page)));
         }).catch(ignoreNotFoundElseRethrow);
@@ -141,8 +175,7 @@ exports.sourceNodes = ({actions}, configOptions) => {
         include: 'count.posts'
     };
 
-    const fetchTags = api.tags
-        .browse(tagAndAuthorFetchOptions)
+    const fetchTags = browseAll(api.tags, tagAndAuthorFetchOptions)
         .then((tags) => {
             tags.forEach((tag) => {
                 tag.postCount = tag.count.posts;
@@ -150,8 +183,7 @@ exports.sourceNodes = ({actions}, configOptions) => {
             });
         }).catch(ignoreNotFoundElseRethrow);
 
-    const fetchAuthors = api.authors
-        .browse(tagAndAuthorFetchOptions)
+    const fetchAuthors = browseAll(api.authors, tagAndAuthorFetchOptions)
         .then((authors) => {
             authors.forEach((author) => {
                 author.postCount = author.count.posts;
@@ -200,9 +232,9 @@ exports.sourceNodes = ({actions}, configOptions) => {
         createNode(SettingsNode(setting));
     }).catch(ignoreNotFoundElseRethrow);
 
-    if (version.match(/^v5\.\d/)) {
-        api.tiers
-            .browse({include: 'benefits,monthly_price,yearly_price'})
+    const majorVersion = parseInt(version.match(/^v(\d+)/)?.[1] || '0', 10);
+    if (majorVersion >= 5) {
+        browseAll(api.tiers, {include: 'benefits,monthly_price,yearly_price'})
             .then((tiers) => {
                 tiers.forEach(tier => createNode(TiersNode(tier)));
             }).catch(ignoreNotFoundElseRethrow);
@@ -219,7 +251,7 @@ exports.sourceNodes = ({actions}, configOptions) => {
 };
 
 /**
- * Creates custom types based on the Ghost V3 API.
+ * Creates custom types based on the Ghost V6 API.
  *
  * This creates a fully custom schema, removing the need for dummy content or fake nodes.
  */

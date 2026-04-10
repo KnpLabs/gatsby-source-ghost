@@ -3,7 +3,13 @@
  * @TODO: consider extending this and moving it to the Content API lib
  */
 
-const browsePosts = sinon.stub().resolves([
+const withMeta = (items, page, pages, total) => {
+    return Object.assign(items, {
+        meta: {pagination: {page, limit: 100, pages, total, next: page < pages ? page + 1 : null, prev: page > 1 ? page - 1 : null}}
+    });
+};
+
+const browsePosts = sinon.stub().resolves(withMeta([
     {
         slug: 'welcome-to-ghost',
         /* Adding this line simulates https://github.com/TryGhost/gatsby-source-ghost/issues/17 */
@@ -17,18 +23,18 @@ const browsePosts = sinon.stub().resolves([
             {name: 'Ghost Author', id: '2'}
         ]
     }
-]);
-const browsePages = sinon.stub().resolves([
+], 1, 1, 1));
+const browsePages = sinon.stub().resolves(withMeta([
     {slug: 'about'}
-]);
-const browseTags = sinon.stub().resolves([
+], 1, 1, 1));
+const browseTags = sinon.stub().resolves(withMeta([
     {slug: 'getting-started', id: '1', count: {posts: 1}},
     {slug: 'hash-feature-img', id: '2', count: {posts: 1}}
-]);
-const browseAuthors = sinon.stub().resolves([
+], 1, 1, 2));
+const browseAuthors = sinon.stub().resolves(withMeta([
     {name: 'Ghost Writer', id: '1', count: {posts: 1}},
     {name: 'Ghost Author', id: '2', count: {posts: 1}}
-]);
+], 1, 1, 2));
 const browseSettings = sinon.stub().resolves(
     {
         title: 'Ghost & Gatsby',
@@ -38,7 +44,7 @@ const browseSettings = sinon.stub().resolves(
         codeinjection_foot: '<style><style>'
     }
 );
-const browseTiers = sinon.stub().resolves([
+const browseTiers = sinon.stub().resolves(withMeta([
     {
         slug: 'gold-tier',
         name: 'Gold Tier',
@@ -53,7 +59,7 @@ const browseTiers = sinon.stub().resolves([
         benefits: ['Get a newsletter', 'Access all posts'],
         visibility: 'public'
     }
-]);
+], 1, 1, 1));
 const MockContentAPI = function () {
     return {
         posts: {browse: browsePosts},
